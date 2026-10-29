@@ -39,7 +39,10 @@ async function loadData() {
     state.meta = meta;
     state.holdings = holdings;
     state.etf = etf;
-    state.period = holdings.periods[holdings.periods.length - 1];
+    const cov = holdings.coverage || {};
+    const settled = holdings.periods.filter((p) => (cov[p] == null ? 1 : cov[p]) >= 0.9);
+    state.period = (settled.length ? settled[settled.length - 1]
+      : holdings.periods[holdings.periods.length - 1]);
     $("loading").hidden = true;
     initControls();
     renderAll();
@@ -65,7 +68,11 @@ function initControls() {
   sel.innerHTML = h.periods
     .slice()
     .reverse()
-    .map((p) => `<option value="${p}">${fmtDate(p)}</option>`)
+    .map((p) => {
+      const c = (h.coverage || {})[p];
+      const tag = c == null ? "" : `（披露 ${(c * 100).toFixed(0)}%）`;
+      return `<option value="${p}">${fmtDate(p)}${tag}</option>`;
+    })
     .join("");
   sel.value = state.period;
   sel.onchange = () => {
@@ -141,9 +148,15 @@ function renderOverview() {
     kpi("增持 / 减持 / 不变", `${sum.add || 0} / ${sum.cut || 0} / ${sum.flat || 0}`, "按披露变动数统计"),
   ].join("");
 
+  const cov = (h.coverage || {})[p];
+  const covTxt =
+    cov == null
+      ? ""
+      : `　该期披露覆盖率 ${(cov * 100).toFixed(0)}%` +
+        (cov < 0.95 ? "（尚未披露完毕，跨期可比性受限）" : "");
   $("overview-note").textContent =
     "持股市值 = 持股数 × 报告期末（或之前最近交易日）收盘价，为估算值；" +
-    "增持/减持依据定期报告披露的“变动”字段，未披露变动的计入“不变”。";
+    "增持/减持依据定期报告披露的“变动”字段，未披露变动的计入“不变”。" + covTxt;
 
   // 市值柱状图（分组）
   const groups = ["中央汇金投资", "中央汇金资管"];
@@ -202,8 +215,8 @@ function stockRows() {
   const g = state.group;
   const rows = [];
   for (const s of h.stocks) {
-    const rec = s.history[state.period] || s.latest;
-    if (!rec) continue;
+    const rec = s.history[state.period];
+    if (!rec) continue;   // 该报告期已退出则不展示
     const v = pick(rec, g);
     if (g !== "all" && !(v.shares > 0)) continue;
     if (state.keyword &&
@@ -346,7 +359,9 @@ function renderAbout() {
       “${(m.keyword || []).join("”“")}”。</p>
     <p><b>股票候选池</b>：${h.index_pools.join("、")} 指数成分股，共 ${h.universe_size} 只；
       扫描策略为先用最近两个报告期全池筛选，再对命中股票回溯历史报告期。</p>
-    <p><b>报告期</b>：${h.periods.map(fmtDate).join("、")}</p>
+    <p><b>报告期</b>：${h.periods.map(fmtDate).join("、")}。
+      一季报/三季报的股东披露完整性弱于年报与半年报，跨期比较建议以年报、半年报为准；
+      页面默认停在“披露覆盖率 ≥ 90%”的最新报告期。</p>
     <p><b>数据来源</b>：${(m.sources || []).map((s) => `<br>· ${s}`).join("")}</p>
     <p><b>ETF 观察池</b>：${(m.etf_watch || []).join("、")}</p>
     <p><b>注意事项</b>：${m.disclaimer || ""}</p>

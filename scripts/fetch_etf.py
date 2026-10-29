@@ -94,9 +94,9 @@ def main():
     res = run_parallel(
         lambda e: (e["code"], fetch_kline(session, e["code"], e["market"], config.ETF_HIST_DAYS)),
         config.ETF_WATCH, workers=8, desc="ETF 行情")
-    for (item, result, err) in res:
-        if result:
-            raw[item["code"]] = result
+    for item, result, err in res:
+        if result and result[1]:
+            raw[result[0]] = result[1]
         else:
             log(f"行情失败 {item['code']}: {err}")
 
@@ -112,7 +112,7 @@ def main():
     log(f"抓取上交所 ETF 份额（{len(share_dates)} 天）")
     sres = run_parallel(lambda d: (d, fetch_share_day(session, d)), share_dates,
                         workers=8, desc="ETF 份额")
-    shares = {d: v for d, v, e in sres if v}
+    shares = {res[0]: res[1] for _, res, _ in sres if res and res[1]}
 
     etfs = []
     for item in config.ETF_WATCH:

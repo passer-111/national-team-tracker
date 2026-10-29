@@ -20,7 +20,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config  # noqa: E402
-from http_utils import run_parallel, to_symbol  # noqa: E402
+from http_utils import get_json, make_session, run_parallel, to_symbol  # noqa: E402
 
 
 def log(msg: str) -> None:
@@ -187,19 +187,24 @@ def pick_state_rows(rows: list[dict]) -> list[dict]:
 
 
 def scan(args_tuple):
+    """返回 (该期十大股东记录条数, 命中的国家队记录列表)。"""
     code, period, refresh = args_tuple
     rows = fetch_top10(code, period, refresh)
-    return pick_state_rows(rows)
+    return len(rows), pick_state_rows(rows)
 
 
 # ---------------------------------------------------------------------------
 # 价格
 # ---------------------------------------------------------------------------
-def fetch_prices(codes: list[str], start: str, end: str) -> dict[str, dict[str, float]]:
-    """返回 {code: {date_str: close}}，用于估算持股市值。"""
+KLINE_URL = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
+
+
+def fetch_prices(codes: list[str], markets: dict[str, str]) -> dict[str, dict[str, float]]:
+    """返回 {code: {date_str: close}}，用于估算持股市值（东财日线，不复权）。"""
     out: dict[str, dict[str, float]] = {}
     cache_dir = config.CACHE_DIR / "price"
     cache_dir.mkdir(exist_ok=True)
+    session = make_session()
 
     def one(code):
         f = cache_dir / f"{code}.csv"
@@ -209,19 +214,45 @@ def fetch_prices(codes: list[str], start: str, end: str) -> dict[str, dict[str, 
                 return code, {d: float(c) for d, c in zip(df["date"], df["close"])}
             except Exception:  # noqa: BLE001
                 pass
+        market = markets.get(code) or ("sh" if code.startswith("6") else "sz")
+        params = {
+            "secid": f"{1 if market == 'sh' else 0}.{code}",
+            "fields1": "f1,f2,f3,f4,f5,f6",
+            "fields2": "f51,f53",
+            "klt": "101",
+            "fqt": "0",
+            "end": "20500101",
+            "lmt": "1000",
+            "ut": "7eea3edcaed734bea9cbfc24409ed989",
+        }
         for attempt in range(3):
             try:
-                df = ak.stock_zh_a_hist(symbol=code, period="daily",
-                                        start_date=start, end_date=end, adjust="")
-                df = df.rename(columns={"日期": "date", "收盘": "close"})
-                df["date"] = df["date"].astype(str)
-                df[["date", "close"]].to_csv(f, index=False, encoding="utf-8-sig")
-                return code, {d: float(c) for d, c in zip(df["date"], df["close"])}
+                data = get_json(session, KLINE_URL, params=params, timeout=20)
+                klines = ((data or {}).get("data") or {}).get("klines", [])
+                series = {}
+                for line in klines:
+                    d, c = line.split(",")[:2]
+                    series[d] = float(c)
+                if series:
+                    pd.DataFrame({"date": list(series), "close": list(series.values())}).to_csv(
+                        f, index=False, encoding="utf-8-sig")
+                return code, series
             except Exception:  # noqa: BLE001
                 time.sleep(0.8 * (attempt + 1))
-        return code, {}
 
-    res = run_parallel(one, codes, workers=config.MAX_WORKERS, desc="拉取行情")
+        # 兜底：新浪日线
+        try:
+            df = ak.stock_zh_a_daily(symbol=market + code, adjust="")
+            df["date"] = df["date"].astype(str).str.slice(0, 10)
+            series = {d: float(c) for d, c in zip(df["date"], df["close"])}
+            if series:
+                pd.DataFrame({"date": list(series), "close": list(series.values())}).to_csv(
+                    f, index=False, encoding="utf-8-sig")
+            return code, series
+        except Exception:  # noqa: BLE001
+            return code, {}
+
+    res = run_parallel(one, codes, workers=6, desc="拉取行情")
     for item, result, err in res:
         if result and result[1]:
             code, series = result
@@ -261,16 +292,24 @@ def main():
     scan_periods = periods[-2:] if len(periods) >= 2 else periods
     latest_hits: dict[str, dict[str, list[dict]]] = {}
     scanned: list[str] = []
+    coverage: dict[str, float] = {}
     for p in scan_periods:
         log(f"阶段一：扫描报告期 {p}（全池 {len(uni)} 只）")
         res = run_parallel(scan, [(c, p, args.refresh) for c in uni["code"]],
                            workers=config.MAX_WORKERS, desc=f"{p} 扫描")
         hits = 0
-        for (code, _, _), rows, err in res:
+        non_empty = 0
+        for (code, _, _), result, err in res:
+            if err is not None or result is None:
+                continue
+            n_rows, rows = result
+            if n_rows:
+                non_empty += 1
             if rows:
                 latest_hits.setdefault(code, {})[p] = rows
                 hits += 1
-        log(f"  {p} 命中 {hits} 只")
+        coverage[p] = round(non_empty / max(1, len(uni)), 4)
+        log(f"  {p} 命中 {hits} 只，披露覆盖 {coverage[p]:.1%}")
         if hits:
             scanned.append(p)
     if not latest_hits:
@@ -287,22 +326,20 @@ def main():
     history: dict[str, dict[str, list[dict]]] = {c: dict(v) for c, v in latest_hits.items()}
     if tasks:
         res = run_parallel(scan, tasks, workers=config.MAX_WORKERS, desc="历史期扫描")
-        for (code, period, _), rows, err in res:
-            if rows:
-                history.setdefault(code, {})[period] = rows
+        for (code, period, _), result, err in res:
+            if result and result[1]:
+                history.setdefault(code, {})[period] = result[1]
 
     codes = sorted(history)
     log(f"国家队持仓股票合计 {len(codes)} 只")
 
     # ---- 价格 ----
-    start = periods[0][:4] + "0101"          # akshare 要求 YYYYMMDD
-    end = datetime.today().strftime("%Y%m%d")
-    prices = fetch_prices(codes, start, end)
+    market_map = dict(zip(uni["code"], uni["market"]))
+    prices = fetch_prices(codes, market_map)
     log(f"行情覆盖 {len(prices)} 只")
 
     # ---- 组装 ----
     name_map = dict(zip(uni["code"], uni["name"]))
-    market_map = dict(zip(uni["code"], uni["market"]))
     stocks = []
     for code in codes:
         recs = history[code]
@@ -360,7 +397,8 @@ def main():
     # ---- 汇总 ----
     summary = []
     flows = {}
-    prev_codes = set()
+    prev_codes: set[str] = set()
+    prev_cur: dict[str, dict] = {}
     for p in periods:
         cur = {s["code"]: s["history"][p] for s in stocks if p in s["history"]}
         new = sorted(set(cur) - prev_codes)
@@ -390,21 +428,23 @@ def main():
             "add": len(add), "cut": len(cut), "flat": len(flat),
             "by_group": by_group,
         })
-        def brief(cs, key):
+        def brief(cs, key, src=None):
+            src = src or cur
             rows = []
             for c in cs:
-                v = cur.get(c) or {}
+                v = src.get(c) or {}
                 rows.append({"code": c, "name": next((s["name"] for s in stocks if s["code"] == c), c),
                              "value": v.get("value"), "shares": v.get("shares"), "change": v.get("change")})
             rows.sort(key=lambda r: abs(r.get(key) or 0), reverse=True)
             return rows[:10]
         flows[p] = {
             "new": brief(new, "value"),
-            "exit": brief(exit_, "value"),
+            "exit": brief(exit_, "value", prev_cur),   # 退出个股展示退出前的市值
             "add": brief(add, "change"),
             "cut": brief(cut, "change"),
         }
         prev_codes = set(cur)
+        prev_cur = cur
 
     payload = {
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -413,6 +453,7 @@ def main():
         "universe_size": len(uni),
         "universe_mode": config.UNIVERSE_MODE,
         "index_pools": config.INDEX_POOLS,
+        "coverage": coverage,
         "summary": summary,
         "flows": flows,
         "stocks": stocks,
