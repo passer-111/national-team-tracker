@@ -24,6 +24,7 @@
   <button class="tab active" data-view="overview">持仓总览</button>
   <button class="tab" data-view="stocks">个股明细</button>
   <button class="tab" data-view="etf">ETF 托底力度</button>
+  <button class="tab" data-view="timeline">入场时间线</button>
   <button class="tab" data-view="about">口径与说明</button>
 </nav>
 
@@ -87,10 +88,19 @@
               <option value="中央汇金资管">中央汇金资管</option>
             </select>
           </label>
+          <label>动作
+            <select id="flow-filter">
+              <option value="all">全部持仓</option>
+              <option value="new">本期新进（入场）</option>
+              <option value="add">本期增持</option>
+              <option value="cut">本期减持</option>
+            </select>
+          </label>
         </div>
       </div>
       <div class="table-scroll"><table id="tbl-stocks"></table></div>
-      <p class="note">点击任一行可展开该股历史各期持仓变化。</p>
+      <p class="note">「入场期」= 个股首次现身于十大流通股东名单的报告期，带 * 表示追踪起点已持有（真实入场更早、不可知）；
+        入场以来涨跌 = 入场期收盘价至最新价的涨跌幅。点击任一行可展开该股逐期持仓。</p>
     </div>
   </section>
 
@@ -106,6 +116,23 @@
     <div class="card">
       <h2>ETF 明细</h2>
       <div class="table-scroll"><table id="tbl-etf"></table></div>
+    </div>
+  </section>
+
+  <!-- 入场时间线 -->
+  <section id="view-timeline" class="view" hidden>
+    <div class="card">
+      <h2>ETF 大额净申购（份额突增）</h2>
+      <div class="kpis" id="timeline-kpis"></div>
+      <div class="table-scroll"><table id="tbl-events"></table></div>
+      <p class="note">判定标准：单日估算净申购额 ≥ 20 亿元，或单日份额增幅 ≥ 2%（净申购额 = 份额增量 × 当日收盘价）。
+        这是国家队托底入场的<b>高频代理信号</b>，而非持仓确认；份额口径仅覆盖沪市 ETF。</p>
+    </div>
+    <div class="card">
+      <h2>逐报告期个股动作</h2>
+      <div class="table-scroll"><table id="tbl-periodflow"></table></div>
+      <p class="note">季报只能观测到「在哪一期首次现身」，无法精确到具体买入日期；
+        且仅覆盖进入十大流通股东的持仓。</p>
     </div>
   </section>
 

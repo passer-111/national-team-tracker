@@ -199,8 +199,16 @@ def scan(args_tuple):
 KLINE_URL = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
 
 
+def _save(f: Path, series: dict[str, float]) -> None:
+    pd.DataFrame({"date": list(series), "close": list(series.values())}).to_csv(
+        f, index=False, encoding="utf-8-sig")
+
+
 def fetch_prices(codes: list[str], markets: dict[str, str]) -> dict[str, dict[str, float]]:
-    """返回 {code: {date_str: close}}，用于估算持股市值（东财日线，不复权）。"""
+    """返回 {code: {date_str: close}}（不复权收盘价）。
+
+    主用新浪全历史日线（覆盖 2015 年以来的入场时点），东财作为兜底。
+    """
     out: dict[str, dict[str, float]] = {}
     cache_dir = config.CACHE_DIR / "price"
     cache_dir.mkdir(exist_ok=True)
@@ -211,18 +219,35 @@ def fetch_prices(codes: list[str], markets: dict[str, str]) -> dict[str, dict[st
         if f.exists():
             try:
                 df = pd.read_csv(f, dtype={"date": str})
-                return code, {d: float(c) for d, c in zip(df["date"], df["close"])}
+                series = {d: float(c) for d, c in zip(df["date"], df["close"])}
+                if series:
+                    return code, series
             except Exception:  # noqa: BLE001
                 pass
         market = markets.get(code) or ("sh" if code.startswith("6") else "sz")
+
+        # 1) 新浪：一次拿到全部历史日线
+        for attempt in range(3):
+            try:
+                df = ak.stock_zh_a_daily(symbol=market + code, adjust="")
+                df["date"] = df["date"].astype(str).str.slice(0, 10)
+                series = {d: float(c) for d, c in zip(df["date"], df["close"])}
+                if series:
+                    _save(f, series)
+                    return code, series
+            except Exception:  # noqa: BLE001
+                time.sleep(0.8 * (attempt + 1))
+
+        # 2) 东财兜底
         params = {
             "secid": f"{1 if market == 'sh' else 0}.{code}",
             "fields1": "f1,f2,f3,f4,f5,f6",
             "fields2": "f51,f53",
             "klt": "101",
             "fqt": "0",
+            "beg": "20150101",
             "end": "20500101",
-            "lmt": "1000",
+            "lmt": "4000",
             "ut": "7eea3edcaed734bea9cbfc24409ed989",
         }
         for attempt in range(3):
@@ -234,23 +259,11 @@ def fetch_prices(codes: list[str], markets: dict[str, str]) -> dict[str, dict[st
                     d, c = line.split(",")[:2]
                     series[d] = float(c)
                 if series:
-                    pd.DataFrame({"date": list(series), "close": list(series.values())}).to_csv(
-                        f, index=False, encoding="utf-8-sig")
-                return code, series
+                    _save(f, series)
+                    return code, series
             except Exception:  # noqa: BLE001
                 time.sleep(0.8 * (attempt + 1))
-
-        # 兜底：新浪日线
-        try:
-            df = ak.stock_zh_a_daily(symbol=market + code, adjust="")
-            df["date"] = df["date"].astype(str).str.slice(0, 10)
-            series = {d: float(c) for d, c in zip(df["date"], df["close"])}
-            if series:
-                pd.DataFrame({"date": list(series), "close": list(series.values())}).to_csv(
-                    f, index=False, encoding="utf-8-sig")
-            return code, series
-        except Exception:  # noqa: BLE001
-            return code, {}
+        return code, {}
 
     res = run_parallel(one, codes, workers=6, desc="拉取行情")
     for item, result, err in res:
@@ -375,9 +388,14 @@ def main():
         if not hist:
             continue
         plist = sorted(hist)
+        for i, p in enumerate(plist):
+            rec = hist[p]
+            chg = rec.get("change") or 0
+            rec["event"] = "entry" if i == 0 else ("add" if chg > 0 else ("cut" if chg < 0 else "flat"))
         series = prices.get(code, {})
         last_close = max(series) if series else None
         prev = hist[plist[-2]] if len(plist) >= 2 else None
+        entry_close = hist[plist[0]].get("close")
         stocks.append({
             "code": code,
             "name": name_map.get(code, code),
@@ -385,6 +403,13 @@ def main():
             "first_period": plist[0],
             "last_period": plist[-1],
             "periods_held": len(plist),
+            # 入场时点：首次现身于十大流通股东的报告期
+            # entry_truncated=True 表示追踪起点已有持仓，真实入场早于该期、不可知
+            "entry_period": plist[0],
+            "entry_close": entry_close,
+            "entry_truncated": plist[0] == periods[0],
+            "pnl_since_entry": ((series[last_close] / entry_close - 1) * 100)
+            if (series and entry_close) else None,
             "history": hist,
             "latest": hist[plist[-1]],
             "prev": prev,

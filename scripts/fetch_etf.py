@@ -115,6 +115,7 @@ def main():
     shares = {res[0]: res[1] for _, res, _ in sres if res and res[1]}
 
     etfs = []
+    events: list[dict] = []
     for item in config.ETF_WATCH:
         series = raw.get(item["code"])
         if not series:
@@ -137,6 +138,25 @@ def main():
         ma20 = sum(amounts[-21:-1]) / 20 if len(amounts) >= 21 else None
         last = rows[-1]
         share_series = [r["s"] for r in rows if r["s"] is not None]
+
+        # 份额突增 -> 大额净申购（国家队托底的高频代理信号）
+        for i in range(1, len(rows)):
+            s_prev, s_now, c_now = rows[i - 1]["s"], rows[i]["s"], rows[i]["c"]
+            if not (s_prev and s_now and c_now):
+                continue
+            net = (s_now - s_prev) * c_now
+            pct = (s_now / s_prev - 1) * 100
+            if net >= config.SHARE_SURGE_AMOUNT or pct >= config.SHARE_SURGE_PCT:
+                events.append({
+                    "date": rows[i]["d"],
+                    "code": item["code"],
+                    "name": item["name"],
+                    "state_owned": item["state_owned"],
+                    "pct": round(pct, 2),
+                    "net_amount": round(net, 0),
+                    "amount": rows[i]["a"],
+                })
+
         etfs.append({
             "code": item["code"],
             "name": item["name"],
@@ -175,12 +195,14 @@ def main():
         row["amount_ma20"] = round(sum(window) / len(window), 2) if window else None
         row["ratio"] = round(row["amount"] / row["amount_ma20"], 3) if row.get("amount_ma20") else None
 
+    events.sort(key=lambda x: x["date"], reverse=True)
     payload = {
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "share_scope": "份额为上交所每日申赎清单口径，仅覆盖沪市 ETF；深市 ETF 无份额数据",
         "dates": dates,
         "etfs": etfs,
         "aggregate": agg,
+        "events": events,
     }
     out = config.DATA_DIR / "etf.json"
     out.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")

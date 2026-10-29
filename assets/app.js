@@ -5,6 +5,7 @@ const state = {
   holdings: null,
   etf: null,
   group: "all",
+  flow: "all",
   period: null,
   sortKey: "latest_value",
   sortDir: -1,
@@ -91,6 +92,10 @@ function initControls() {
     state.keyword = e.target.value.trim();
     renderStocks();
   };
+  $("flow-filter").onchange = (e) => {
+    state.flow = e.target.value;
+    renderStocks();
+  };
   $("btn-reload").onclick = loadData;
 }
 
@@ -98,6 +103,7 @@ function renderAll() {
   renderOverview();
   renderStocks();
   renderEtf();
+  renderTimeline();
   renderAbout();
 }
 
@@ -202,21 +208,28 @@ function flowTable(rows, key) {
 const COLUMNS = [
   { key: "code", label: "代码", type: "s" },
   { key: "name", label: "名称", type: "s" },
+  { key: "entry_period", label: "入场期", type: "s" },
   { key: "shares", label: "持股数", type: "n" },
   { key: "ratio", label: "占比", type: "n" },
   { key: "change", label: "环比变动", type: "n" },
   { key: "value", label: "期末市值", type: "n" },
   { key: "latest_value", label: "最新市值", type: "n" },
   { key: "periods_held", label: "持有期数", type: "n" },
+  { key: "pnl_since_entry", label: "入场以来", type: "n" },
 ];
 
 function stockRows() {
   const h = state.holdings;
   const g = state.group;
+  const flowCodes =
+    state.flow === "all"
+      ? null
+      : new Set(((((h.flows || {})[state.period] || {})[state.flow]) || []).map((r) => r.code));
   const rows = [];
   for (const s of h.stocks) {
     const rec = s.history[state.period];
     if (!rec) continue;   // 该报告期已退出则不展示
+    if (flowCodes && !flowCodes.has(s.code)) continue;
     const v = pick(rec, g);
     if (g !== "all" && !(v.shares > 0)) continue;
     if (state.keyword &&
@@ -225,6 +238,9 @@ function stockRows() {
       code: s.code,
       name: s.name,
       market: s.market,
+      entry_period: s.entry_period,
+      entry_truncated: s.entry_truncated,
+      pnl_since_entry: s.pnl_since_entry,
       shares: v.shares,
       ratio: v.ratio,
       change: v.change,
@@ -260,23 +276,30 @@ function renderStocks() {
 
   const body = rows
     .map((r) => {
+      const entry = fmtDate(r.entry_period) + (r.entry_truncated ? " *" : "");
       const main = `<tr data-code="${r.code}"><td>${r.code}</td><td>${r.name}${
         r.market === "sh" ? '<span class="tag">沪</span>' : '<span class="tag">深</span>'
-      }</td><td>${fmtShares(r.shares)}</td><td>${r.ratio == null ? "—" : r.ratio.toFixed(2) + "%"}</td>
+      }</td><td>${entry}</td><td>${fmtShares(r.shares)}</td><td>${
+        r.ratio == null ? "—" : r.ratio.toFixed(2) + "%"
+      }</td>
       <td class="${cls(r.change)}">${r.change == null ? "—" : fmtShares(r.change)}</td>
-      <td>${fmtYi(r.value)}</td><td>${fmtYi(r.latest_value)}</td><td>${r.periods_held}</td></tr>`;
+      <td>${fmtYi(r.value)}</td><td>${fmtYi(r.latest_value)}</td><td>${r.periods_held}</td>
+      <td class="${cls(r.pnl_since_entry)}">${
+        r.pnl_since_entry == null ? "—" : fmtPct(r.pnl_since_entry, 1)
+      }</td></tr>`;
       const hist = Object.entries(r._s.history)
         .sort((a, b) => a[0].localeCompare(b[0]))
         .map(([p, rec]) => {
           const v = pick(rec, state.group);
+          const ev = rec.event === "entry" ? '<span class="tag hot">入场</span>' : "";
           return `<span style="margin-right:14px">${fmtDate(p)}：${fmtShares(v.shares)}` +
             (v.change != null ? `（<span class="${cls(v.change)}">${fmtShares(v.change)}</span>）` : "") +
-            "</span>";
+            (rec.flag ? `<span class="tag">${rec.flag}</span>` : "") + ev + "</span>";
         })
         .join("");
       return (
         main +
-        `<tr class="detail-row" data-detail="${r.code}" hidden><td colspan="8">
+        `<tr class="detail-row" data-detail="${r.code}" hidden><td colspan="10">
           <div>持有主体：${r.holders || "—"}</div><div style="margin-top:4px">${hist}</div></td></tr>`
       );
     })
@@ -350,6 +373,63 @@ function renderEtf() {
   $("tbl-etf").innerHTML = head + "<tbody>" + body + "</tbody>";
 }
 
+// ---------------------------------------------------------------- 入场时间线
+function renderTimeline() {
+  const e = state.etf;
+  const h = state.holdings;
+  const dates = e.dates || [];
+  const events = (e.events || []).slice(0, 120);
+  const start = dates[Math.max(0, dates.length - 60)] || "—";
+  const end = dates[dates.length - 1] || "—";
+  const totalNet = events.reduce((a, b) => a + b.net_amount, 0);
+  const byEtf = {};
+  events.forEach((ev) => {
+    byEtf[ev.name] = (byEtf[ev.name] || 0) + ev.net_amount;
+  });
+  const topEntry = Object.entries(byEtf).sort((a, b) => b[1] - a[1])[0];
+
+  $("timeline-kpis").innerHTML = [
+    kpi("份额突增事件", events.length, `${start} ~ ${end}`),
+    kpi("累计估算净申购", fmtYi(totalNet), "突增日净申购额合计"),
+    kpi("净申购最多", topEntry ? topEntry[0] : "—", topEntry ? fmtYi(topEntry[1]) : ""),
+    kpi("最近一次", events.length ? events[0].date : "—",
+      events.length ? `${events[0].name} +${events[0].pct}%` : ""),
+  ].join("");
+
+  const evHead =
+    "<thead><tr><th>日期</th><th>ETF</th><th>份额环比</th><th>估算净申购</th><th>当日成交额</th></tr></thead>";
+  const evBody = events
+    .map(
+      (x) => `<tr><td>${x.date}</td>
+      <td style="text-align:left">${x.code} ${x.name}${
+        x.state_owned ? '<span class="tag hot">汇金</span>' : ""
+      }</td>
+      <td class="up">+${x.pct.toFixed(2)}%</td>
+      <td>${fmtYi(x.net_amount)}</td>
+      <td>${fmtYi(x.amount)}</td></tr>`
+    )
+    .join("");
+  $("tbl-events").innerHTML =
+    evHead +
+    "<tbody>" +
+    (evBody || '<tr><td colspan="5">近 60 个交易日无份额突增</td></tr>') +
+    "</tbody>";
+
+  const pfHead =
+    "<thead><tr><th>报告期</th><th>持仓只数</th><th>新进</th><th>退出</th><th>增持</th><th>减持</th>" +
+    "<th>新进个股</th><th>退出个股</th></tr></thead>";
+  const pfBody = h.summary
+    .map((s) => {
+      const f = (h.flows || {})[s.period] || {};
+      return `<tr><td>${fmtDate(s.period)}</td><td>${s.stock_count}</td>
+        <td class="up">${s.new}</td><td class="down">${s.exit}</td><td>${s.add}</td><td>${s.cut}</td>
+        <td style="text-align:left">${(f.new || []).map((r) => r.name).join("、") || "—"}</td>
+        <td style="text-align:left">${(f.exit || []).map((r) => r.name).join("、") || "—"}</td></tr>`;
+    })
+    .join("");
+  $("tbl-periodflow").innerHTML = pfHead + "<tbody>" + pfBody + "</tbody>";
+}
+
 // ---------------------------------------------------------------- 说明
 function renderAbout() {
   const m = state.meta || {};
@@ -371,7 +451,7 @@ function renderAbout() {
 
 // ---------------------------------------------------------------- SVG 图表
 function drawBars(el, labels, series, unit) {
-  const w = Math.max(560, labels.length * 78);
+  const w = Math.max(560, labels.length * 52);
   const h = 260;
   const pad = { l: 54, r: 12, t: 14, b: 42 };
   const max = Math.max(1, ...series.flatMap((s) => s.values));
