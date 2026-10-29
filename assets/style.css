@@ -1,0 +1,153 @@
+:root {
+  --bg: #f5f6f8;
+  --card: #ffffff;
+  --ink: #1c2430;
+  --muted: #6b7684;
+  --line: #e3e7ec;
+  --blue: #2f6fb5;
+  --green: #2f9e6f;
+  --red: #c0392b;
+  --orange: #e08a1e;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+}
+
+.topbar {
+  background: #1c2430;
+  color: #fff;
+  padding: 18px 0;
+}
+
+.topbar-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.topbar h1 { margin: 0; font-size: 20px; letter-spacing: .5px; }
+.topbar .sub { margin: 4px 0 0; color: #a9b4c2; font-size: 12px; }
+.topbar .meta { font-size: 12px; color: #a9b4c2; display: flex; align-items: center; gap: 10px; }
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid #45505f;
+  color: #cfd7e1;
+  border-radius: 4px;
+  padding: 3px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.btn-ghost:hover { background: #2b3644; }
+
+.tabs {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 14px 20px 0;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tab {
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--muted);
+  padding: 7px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.tab.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: 14px 20px 40px; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px 18px;
+  margin-bottom: 14px;
+}
+
+.card.err { border-color: var(--red); color: var(--red); }
+
+.card h2 { margin: 0 0 12px; font-size: 15px; font-weight: 600; }
+
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.card-head h2 { margin-bottom: 0; }
+
+.filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+.filters select, .filters input {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 6px 0 10px; }
+.kpi { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; background: #fbfcfd; }
+.kpi .k { font-size: 12px; color: var(--muted); }
+.kpi .v { font-size: 20px; font-weight: 600; margin-top: 2px; }
+.kpi .d { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+.chart { width: 100%; overflow-x: auto; }
+.chart svg { display: block; }
+
+.legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin-top: 6px; flex-wrap: wrap; }
+.lg::before {
+  content: "";
+  display: inline-block;
+  width: 10px; height: 10px;
+  background: var(--c);
+  margin-right: 5px;
+  border-radius: 2px;
+}
+
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
+.grid2 .card { margin-bottom: 0; }
+
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+th { color: var(--muted); font-weight: 500; text-align: right; background: #fafbfc; position: sticky; top: 0; }
+th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+tbody tr:hover { background: #f7f9fb; }
+tr.detail-row td { background: #fbfcfd; text-align: left; white-space: normal; color: var(--muted); }
+
+.table-scroll { max-height: 620px; overflow: auto; }
+
+.up { color: var(--red); }
+.down { color: var(--green); }
+.zero { color: var(--muted); }
+
+.note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+
+.foot { text-align: center; color: var(--muted); font-size: 12px; padding: 18px 0 30px; }
+
+.tag {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  margin-left: 6px;
+}
+.tag.hot { border-color: var(--orange); color: var(--orange); }
+
+@media (max-width: 640px) {
+  .topbar-inner { flex-direction: column; align-items: flex-start; }
+  .kpi .v { font-size: 17px; }
+}

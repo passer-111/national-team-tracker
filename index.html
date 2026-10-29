@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A股国家队持仓跟踪 · 中央汇金系</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div>
+      <h1>A股国家队持仓跟踪</h1>
+      <p class="sub" id="scope-line">口径：中央汇金投资 / 中央汇金资产管理</p>
+    </div>
+    <div class="meta">
+      <span id="updated-at">数据加载中…</span>
+      <button id="btn-reload" class="btn-ghost" title="重新加载数据">刷新</button>
+    </div>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button class="tab active" data-view="overview">持仓总览</button>
+  <button class="tab" data-view="stocks">个股明细</button>
+  <button class="tab" data-view="etf">ETF 托底力度</button>
+  <button class="tab" data-view="about">口径与说明</button>
+</nav>
+
+<main class="wrap">
+  <div id="loading" class="card">正在加载 data/*.json …</div>
+  <div id="error" class="card err" hidden></div>
+
+  <!-- 持仓总览 -->
+  <section id="view-overview" class="view" hidden>
+    <div class="card">
+      <div class="card-head">
+        <h2>最新报告期概览</h2>
+        <div class="filters">
+          <label>口径
+            <select id="group-filter">
+              <option value="all">全部汇金系</option>
+              <option value="中央汇金投资">中央汇金投资</option>
+              <option value="中央汇金资管">中央汇金资管</option>
+            </select>
+          </label>
+          <label>报告期
+            <select id="period-filter"></select>
+          </label>
+        </div>
+      </div>
+      <div class="kpis" id="kpis"></div>
+      <p class="note" id="overview-note"></p>
+    </div>
+
+    <div class="card">
+      <h2>各报告期持仓市值（亿元）</h2>
+      <div id="chart-value" class="chart"></div>
+      <div class="legend" id="legend-value"></div>
+    </div>
+
+    <div class="card">
+      <h2>各报告期持仓只数与变动</h2>
+      <div id="chart-count" class="chart"></div>
+      <div class="legend"><span class="lg" style="--c:#2f6fb5">持仓只数</span><span class="lg" style="--c:#2f9e6f">新进</span><span class="lg" style="--c:#c0392b">退出</span></div>
+    </div>
+
+    <div class="grid2">
+      <div class="card"><h2>本期增持 TOP10</h2><div id="tbl-add"></div></div>
+      <div class="card"><h2>本期减持 TOP10</h2><div id="tbl-cut"></div></div>
+      <div class="card"><h2>本期新进</h2><div id="tbl-new"></div></div>
+      <div class="card"><h2>本期退出</h2><div id="tbl-exit"></div></div>
+    </div>
+  </section>
+
+  <!-- 个股明细 -->
+  <section id="view-stocks" class="view" hidden>
+    <div class="card">
+      <div class="card-head">
+        <h2>个股持仓明细</h2>
+        <div class="filters">
+          <input id="stock-search" type="search" placeholder="搜索代码/名称">
+          <label>口径
+            <select id="stock-group">
+              <option value="all">全部汇金系</option>
+              <option value="中央汇金投资">中央汇金投资</option>
+              <option value="中央汇金资管">中央汇金资管</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div class="table-scroll"><table id="tbl-stocks"></table></div>
+      <p class="note">点击任一行可展开该股历史各期持仓变化。</p>
+    </div>
+  </section>
+
+  <!-- ETF -->
+  <section id="view-etf" class="view" hidden>
+    <div class="card">
+      <h2>重点宽基 ETF 合计成交额（亿元）</h2>
+      <div class="kpis" id="etf-kpis"></div>
+      <div id="chart-etf" class="chart"></div>
+      <div class="legend"><span class="lg" style="--c:#2f6fb5">日成交额</span><span class="lg" style="--c:#e08a1e">20日均值</span></div>
+      <p class="note" id="etf-note"></p>
+    </div>
+    <div class="card">
+      <h2>ETF 明细</h2>
+      <div class="table-scroll"><table id="tbl-etf"></table></div>
+    </div>
+  </section>
+
+  <!-- 说明 -->
+  <section id="view-about" class="view" hidden>
+    <div class="card">
+      <h2>口径与数据来源</h2>
+      <div id="about-body"></div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>本站为个人研究用途的数据看板，不构成任何投资建议。</span>
+</footer>
+
+<script src="assets/app.js"></script>
+</body>
+</html>
