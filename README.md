@@ -1,6 +1,9 @@
 # A股国家队持仓跟踪
 
-跟踪 **中央汇金系**（中央汇金投资 / 中央汇金资产管理）在 A 股的持仓变动，静态网页看板 + Python 抓数脚本，数据落盘为 JSON，可直接用 GitHub Pages 发布。
+**在线看板**：https://passer-111.github.io/national-team-tracker/
+**源码仓库**：https://github.com/passer-111/national-team-tracker
+
+跟踪 **中央汇金系**（中央汇金投资 / 中央汇金资产管理）在 A 股的持仓变动，静态网页看板 + Python 抓数脚本，数据落盘为 JSON，直接用 GitHub Pages 发布。
 
 - 个股维度：定期报告披露的十大流通股东中的汇金系持仓（季报口径，准确但有滞后）
 - ETF 维度：重点宽基 ETF 的成交额与份额变化（日频，作为托底力度的高频代理指标）
@@ -55,13 +58,24 @@ python -m http.server 8000             # 本地预览：http://localhost:8000
 
 数据来源：东方财富（十大流通股东、日线行情）、上海证券交易所（ETF 份额）。全部为免费公开接口。
 
-## 部署到 GitHub Pages
+## 部署与更新
+
+已托管在 GitHub 并通过 Pages 发布（Sources：`main` 分支根目录）：
+
+| 项目 | 地址 |
+| --- | --- |
+| 在线看板 | https://passer-111.github.io/national-team-tracker/ |
+| 源码仓库 | https://github.com/passer-111/national-team-tracker |
+
+数据更新流程：
 
 ```bash
-git remote add origin <你的仓库地址>
-git push -u origin main
+python scripts/run_all.py                      # 重新抓取
+git add data/ && git commit -m "data: 更新持仓与ETF数据"
+git push                                       # 推送后约 1 分钟页面生效
 ```
 
-随后在仓库 Settings → Pages 中选择 `main` 分支的根目录即可发布；每次本地跑完脚本后提交 `data/` 目录并推送，页面数据随之更新。
+若需迁移到自己的账号，`git remote set-url origin <新仓库地址>` 后推送，
+并在仓库 Settings → Pages 中选择 `main` 分支的根目录即可。
 
 > 说明：本站为个人研究用途的数据看板，不构成任何投资建议。
